@@ -1,0 +1,18 @@
+catch (TaskCanceledException ex) when (!cts.Token.IsCancellationRequested)
+{
+    // Timeout happened
+    var timeoutMessage = $"Request timed out after {client.Timeout.TotalSeconds} seconds. Details: {ex.Message}";
+    return ResultWrapper<ResponseMemberLevelDto>.Fail(timeoutMessage);
+}
+catch (HttpRequestException ex)
+{
+    // Network error, DNS error, etc
+    var networkErrorMessage = $"Request error: {ex.Message}";
+    return ResultWrapper<ResponseMemberLevelDto>.Fail(networkErrorMessage);
+}
+catch (Exception ex)
+{
+    // Other unhandled errors
+    var unexpectedErrorMessage = $"Unexpected error: {ex.Message}";
+    return ResultWrapper<ResponseMemberLevelDto>.Fail(unexpectedErrorMessage);
+}
