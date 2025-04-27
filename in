@@ -1,18 +1,26 @@
-catch (TaskCanceledException ex) when (!cts.Token.IsCancellationRequested)
+[HttpGet("MemberNotesData")]
+[Produces("application/json")]
+public async Task<ActionResult> GetMemberNotesAsync(string env, string accessNumber)
 {
-    // Timeout happened
-    var timeoutMessage = $"Request timed out after {client.Timeout.TotalSeconds} seconds. Details: {ex.Message}";
-    return ResultWrapper<ResponseMemberLevelDto>.Fail(timeoutMessage);
-}
-catch (HttpRequestException ex)
-{
-    // Network error, DNS error, etc
-    var networkErrorMessage = $"Request error: {ex.Message}";
-    return ResultWrapper<ResponseMemberLevelDto>.Fail(networkErrorMessage);
-}
-catch (Exception ex)
-{
-    // Other unhandled errors
-    var unexpectedErrorMessage = $"Unexpected error: {ex.Message}";
-    return ResultWrapper<ResponseMemberLevelDto>.Fail(unexpectedErrorMessage);
+    try
+    {
+        var logNotesData = await _noteRepository.GetMemberNotesAsync(env, accessNumber);
+
+        if (logNotesData.IsSuccess)
+        {
+            return Ok(logNotesData.Value); // Return the real DTO if success
+        }
+        else
+        {
+            // If it failed (timeout or other error), return 400 BadRequest or 504 Gateway Timeout etc
+            return BadRequest(new
+            {
+                Error = logNotesData.ErrorMessage
+            });
+        }
+    }
+    catch (Exception ex)
+    {
+        return StatusCode(500, new { Error = "Internal server error: " + ex.Message });
+    }
 }
