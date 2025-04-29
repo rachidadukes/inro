@@ -1,26 +1,92 @@
-[HttpGet("MemberNotesData")]
-[Produces("application/json")]
-public async Task<ActionResult> GetMemberNotesAsync(string env, string accessNumber)
-{
-    try
-    {
-        var logNotesData = await _noteRepository.GetMemberNotesAsync(env, accessNumber);
+using MemberToMemberRelat.Shared.Models;
+using Newtonsoft.Json;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 
-        if (logNotesData.IsSuccess)
-        {
-            return Ok(logNotesData.Value); // Return the real DTO if success
-        }
-        else
-        {
-            // If it failed (timeout or other error), return 400 BadRequest or 504 Gateway Timeout etc
-            return BadRequest(new
-            {
-                Error = logNotesData.ErrorMessage
-            });
-        }
-    }
-    catch (Exception ex)
+namespace MemberToMemberRelat.Server
+{
+    public class MemberRelationshipServiceOld : IMemberRelationshipService
     {
-        return StatusCode(500, new { Error = "Internal server error: " + ex.Message });
+        private readonly IConfiguration _configuration;
+        private readonly HttpClient _httpClient;
+
+        public MemberRelationshipServiceOld(IConfiguration configuration, HttpClient httpClient)
+        {
+            _configuration = configuration;
+            _httpClient = httpClient;
+        }
+
+        public async Task<NFCUResponse> RetrieveRelatedMembers(string selectedEnvironment, string selectedAccessNum)
+        {
+            EnvironmentData environmentData = new EnvironmentData();
+            NFCUResponse nfcuResponse = new NFCUResponse();
+
+            try
+            {
+                environmentData = ReadEnvironmentValues(environmentData, selectedEnvironment);
+
+                if (string.IsNullOrWhiteSpace(environmentData.URL))
+                    throw new ArgumentException("The URL is not set");
+
+                var requestObj = new NFCURequest
+                {
+                    NFCURequestHeader = new NFCURequestHeader
+                    {
+                        rqUID = "68f9202e-137f-4d9a-8ac1-6f108e817498",
+                        consumerChannel = "HBK",
+                        consumingApplicationName = "DEMO",
+                        credential = "aps-exchange-user"
+                    },
+                    accessNumber = selectedAccessNum
+                };
+
+                var jsonBody = JsonConvert.SerializeObject(requestObj, Formatting.Indented);
+                var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+                // Set required headers
+                _httpClient.DefaultRequestHeaders.Clear();
+                _httpClient.DefaultRequestHeaders.Add("x-nfcu-clientid", environmentData.ClientId);
+                _httpClient.DefaultRequestHeaders.Add("x-nfcu-clientsecret", environmentData.ClientSecret);
+
+                var response = await _httpClient.PostAsync(environmentData.URL, content);
+
+                if (!response.IsSuccessStatusCode)
+                    throw new HttpRequestException($"API call failed with status code {response.StatusCode}");
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                nfcuResponse = JsonConvert.DeserializeObject<NFCUResponse>(responseContent);
+
+                return nfcuResponse;
+            }
+            catch (Exception ex)
+            {
+                throw new ServiceExecutionException("Failed to retrieve related members.", ex.Message);
+            }
+        }
+
+        private EnvironmentData ReadEnvironmentValues(EnvironmentData environmentData, string selectedEnvironment)
+        {
+            if (selectedEnvironment == "INTG")
+            {
+                environmentData = new EnvironmentData
+                {
+                    URL = _configuration["EndPointSettings:INTG_URL"],
+                    ClientId = _configuration["NFCUApi:ClientId"],
+                    ClientSecret = _configuration["NFCUApi:ClientSecret"]
+                };
+            }
+            else if (selectedEnvironment == "DEV")
+            {
+                environmentData = new EnvironmentData
+                {
+                    URL = _configuration["EndPointSettings:DEV_URL"],
+                    ClientId = _configuration["NFCUApi:ClientId"],
+                    ClientSecret = _configuration["NFCUApi:ClientSecret"]
+                };
+            }
+
+            return environmentData;
+        }
     }
 }
